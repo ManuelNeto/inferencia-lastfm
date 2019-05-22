@@ -67,8 +67,6 @@ theta_c_proporcao = funcao_theta_proporcao(lastfm)
 ```
 
 
-
-
 ```{r}
 ### Questão 1
 repeticoes = 4000 # pelo menos 2000, mas mais não faz mal.
@@ -164,36 +162,23 @@ ggplot() +
 
 
 
-
-
-
-
-
-
-
-
+# Questão 2
 
 ```{r}
-### Questão 1
-repeticoes = 4000 # pelo menos 2000, mas mais não faz mal.
 
-um_bootstrap_proporcao <- function(df){
-  boot_x <- sample_n(df,           # amostre dos dados
-                   size = NROW(news), # tamanho igual ao recebido
-                   replace = TRUE) # aqui é o bootstrap
-  return(funcao_theta_proporcao(boot_x))
+lastfm = lastfm %>%
+    filter(mediana_pop > 5)
+
+funcao_theta_correlacao = function(df) {
+    cor(df$mediana_pop, df$proporcao, method = "pearson")
 }
 
-set.seed(1212)
+theta_c_correlacao = funcao_theta_correlacao(lastfm)
+```
 
-# A REAMOSTRAGEM PARA PROPORCAO
-reamostragens_proporcao = tibble(i = 1:repeticoes) %>% 
-  mutate(theta_c_s = map(i, ~ um_bootstrap_proporcao(lastfm))) %>% 
-  unnest(theta_c_s)
-
-reamostragens_proporcao
-
+```{r}
 ### Questão 2
+repeticoes = 4000 # pelo menos 2000, mas mais não faz mal.
 
 um_bootstrap_correlacao <- function(df){
   boot_x <- sample_n(df,           # amostre dos dados
@@ -204,30 +189,89 @@ um_bootstrap_correlacao <- function(df){
 
 set.seed(1212)
 
-# A REAMOSTRAGEM CORRELACAO
+# A REAMOSTRAGEM PARA PROPORCAO
 reamostragens_correlacao = tibble(i = 1:repeticoes) %>% 
-  mutate(theta_c_s = map(i, ~ um_bootstrap_correlacao(lastfm))) %>% 
-  unnest(theta_c_s)
+  mutate(theta_c_s_correlacao = map(i, ~ um_bootstrap_correlacao(lastfm))) %>% 
+  unnest(theta_c_s_correlacao)
 
 reamostragens_correlacao
 
 reamostragens_correlacao %>%
-  ggplot(aes(x = theta_c_s)) +
+  ggplot(aes(x = theta_c_s_correlacao)) +
   geom_histogram(binwidth = .5,
                  colour = "darkorange",
                  fill = "white")
 
 reamostragens_correlacao %>%
-  ggplot(aes(x = theta_c_s - theta_c)) +
+  ggplot(aes(x = theta_c_s_correlacao - theta_c_correlacao)) +
   geom_histogram(binwidth = 1,
                  colour = "darkblue",
                  fill = "white")
 
 ```
 
+Se é retirado os erros amostrais
+
+```{r}
+intervalo = reamostragens_correlacao %>% 
+  mutate(error = theta_c_s_correlacao - theta_c_correlacao) %>% 
+  summarise(inf_error = quantile(error, .025), 
+            sup_error = quantile(error, .975))
+intervalo
+```
+
+E a seguir é calculado o intervalo de confiança: [inf_value, sup_value]
+
+```{r}
+intervalo = intervalo %>% 
+  mutate(inf_value = theta_c_correlacao + inf_error, 
+         sup_value = theta_c_correlacao + sup_error)
+intervalo
+```
+
+Abaixo é realizado o bootstrap usando a biblioteca 'boot'.
+
+```{r}
+set.seed(12345)
+funcao_theta_proporcao = function(df,i) {
+  df <- df %>%
+    slice(i) 
+  
+  cor(df$mediana_pop, df$proporcao, method = "spearman")
+}
+booted <- boot(data = lastfm, 
+               statistic = funcao_theta_proporcao, 
+               R = 4000)
+intervalo_calc = boot.ci(booted, 
+          conf = .95,
+          type = "bca")
+
+intervalo_calc
+```
+
 ```{r}
 
+ggplot() +
+  geom_rect(
+    data = intervalo,
+    aes(xmin = inf_value, xmax = sup_value),
+    ymin = -Inf,
+    ymax = Inf,
+    fill = "gold",
+    alpha = .25
+  ) +
+  geom_histogram(
+    data = reamostragens_correlacao,
+    aes(theta_c_s_correlacao),
+    binwidth = .5,
+    fill = "white",
+    colour = "darkgrey"
+  ) +
+  geom_vline(xintercept = theta_c_correlacao, color = "dark green") +
+  labs(title = expression("Intervalo estimado via bootstrap"))
+
 ```
+
 
 
 
