@@ -1,16 +1,16 @@
 ---
 title: "Implementando ICs"
-author: "Nazareno"
+author: "Manuel Severino da Silva Neto"
 output:
-  html_document:
-    theme: readable
-    df_print: paged
-    toc: yes
   html_notebook:
     fig_width: 7
     theme: readable
     toc: yes
     toc_float: yes
+  html_document:
+    theme: readable
+    df_print: paged
+    toc: yes
 ---
 
 ```{r setup, include=FALSE, message=FALSE}
@@ -48,13 +48,16 @@ Crie intervalos com 95% de confiança.
 
 # Questão 1
 
-```{r}
-### Questão 1
+Nesta primeira sessão é calculado o valor para a proporção novos artistas em geral escutada por usuários
 
+```{r}
+
+#calculo da proporção
 lastfm = lastfm %>%
    mutate(proporcao = (news / (news + old)) * 100) 
 
-
+lastfm %>%
+    summarise(media_prop = mean(proporcao), dp_prop = sd(proporcao))
 
 funcao_theta_proporcao = function(df) {
   df %>%
@@ -66,9 +69,11 @@ theta_c_proporcao = funcao_theta_proporcao(lastfm)
 
 ```
 
+Na sessão abaixo é executada a coleta das 4000 reamostras e calculado a proporção para cada uma delas. Ao fim, é exibido gráficos com a distribuições das proporções nas reamostras.
 
 ```{r}
-### Questão 1
+
+### Bootstrap para cada amostra
 repeticoes = 4000 # pelo menos 2000, mas mais não faz mal.
 
 um_bootstrap_proporcao <- function(df){
@@ -85,42 +90,43 @@ reamostragens_proporcao = tibble(i = 1:repeticoes) %>%
   mutate(theta_c_s_proporcao = map(i, ~ um_bootstrap_proporcao(lastfm))) %>% 
   unnest(theta_c_s_proporcao)
 
-reamostragens_proporcao
-
 reamostragens_proporcao %>%
   ggplot(aes(x = theta_c_s_proporcao)) +
   geom_histogram(binwidth = .5,
                  colour = "darkorange",
-                 fill = "white")
+                 fill = "white") +
+    ggtitle("Proporção de novos artistas em geral escutada por usuários") +  # for the main title
+    xlab("Theta C S para a proporção") +  # for the x axis label
+    ylab("Número de ocorrências") # for the y axis label
 
 reamostragens_proporcao %>%
   ggplot(aes(x = theta_c_s_proporcao - theta_c_proporcao)) +
   geom_histogram(binwidth = 1,
                  colour = "darkblue",
-                 fill = "white")
+                 fill = "white") +
+        xlab("Theta C S - Theta C") +  # for the x axis label
+        ylab("Número de ocorrências") # for the y axis label
 
 ```
 
-Se é retirado os erros amostrais
+Nesta sessão é calculado os erros inferiores e superiores, além do calculo do intervalo de confiança.
 
 ```{r}
 intervalo = reamostragens_proporcao %>% 
   mutate(error = theta_c_s_proporcao - theta_c_proporcao) %>% 
-  summarise(inf_error = quantile(error, .025), 
-            sup_error = quantile(error, .975))
-intervalo
-```
+  summarise(erro_inf = quantile(error, .025), 
+            erro_sup = quantile(error, .975))
 
-E a seguir é calculado o intervalo de confiança: [inf_value, sup_value]
-
-```{r}
 intervalo = intervalo %>% 
-  mutate(inf_value = theta_c_proporcao + inf_error, 
-         sup_value = theta_c_proporcao + sup_error)
+  mutate(valor_inf = theta_c_proporcao + erro_inf, 
+         valor_sup = theta_c_proporcao + erro_sup)
 intervalo
 ```
 
-Abaixo é realizado o bootstrap usando a biblioteca 'boot'.
+
+    A proporção de novos artistas em geral escutada por usuários tem uma média de 24.04283, para um desvio padrão de 10.48967, com N = 4000. Os gráficos nos mostram que para um total de 4000 repetições, o valor 24 para a variável proporção possui o maior número de ocorrências, e valores próximos a 24 possuem também elevados números de ocorrências.
+
+Por fim, nesta ultima sessão referente a Questão 1 é realizado o bootstrap usando a biblioteca 'boot'com o objetivo de comparar com os cálculos realizados anteriormente. 
 
 ```{r}
 set.seed(1)
@@ -137,12 +143,17 @@ intervalo_calc <- boot.ci(booted, conf=.95, type="bca")
 intervalo_calc
 ```
 
+    Os resultados concordam até a primeira casa decimal. Alguma diferença é esperada porque as reamostras são escolhidas randomicamente. De qualquer forma, o resultado é o mesmo: com 95% de confiança, podemos dizer que a proporção de novos artistas escutados pelos usuários no período selecionado está entre 23% e 25.5%.
+
+
+Os resultados da sessão anterior são exibidos no gráfico abaixo.
+
 ```{r}
 
 ggplot() +
   geom_rect(
     data = intervalo,
-    aes(xmin = inf_value, xmax = sup_value),
+    aes(xmin = valor_inf, xmax = valor_sup),
     ymin = -Inf,
     ymax = Inf,
     fill = "gold",
@@ -156,7 +167,9 @@ ggplot() +
     colour = "darkgrey"
   ) +
   geom_vline(xintercept = theta_c_proporcao, color = "dark green") +
-  labs(title = expression("Intervalo estimado via bootstrap"))
+  labs(title = expression("Proporção de novos artistas")) + 
+  xlab("Theta C S") +  # for the x axis label
+  ylab("Número de ocorrências") # for the y axis label
 
 ```
 
@@ -164,83 +177,54 @@ ggplot() +
 
 # Questão 2
 
-```{r}
 
-lastfm = lastfm %>%
+Nesta primeira sessão é calculado o valor para a correlação entre a popularidade mediana dos artistas escutados e a proporção dos artistas escutados que eram novos para um total de 4000 repetições. Em seguida, é calculado a margem de erro e o intervalo de confiança.
+
+
+```{r}
+lastfm_pop = lastfm %>% 
     filter(mediana_pop > 5)
 
-funcao_theta_correlacao = function(df) {
-    cor(df$mediana_pop, df$proporcao, method = "pearson")
+sample_cor = function() {
+    sample = lastfm_pop %>% 
+        sample_n(NROW(lastfm_pop), replace = TRUE)
+    return(cor(x = sample$mediana_pop, y = sample$proporcao, method = "pearson"))
 }
 
-theta_c_correlacao = funcao_theta_correlacao(lastfm)
-```
+theta_c_correlacao = sample_cor()
 
-```{r}
-### Questão 2
-repeticoes = 4000 # pelo menos 2000, mas mais não faz mal.
+samples = tibble(i = 1:repeticoes) %>% 
+    mutate(theta_c_s_correlacao = map_dbl(i, ~ sample_cor()))
 
-um_bootstrap_correlacao <- function(df){
-  boot_x <- sample_n(df,           # amostre dos dados
-                   size = NROW(news), # tamanho igual ao recebido
-                   replace = TRUE) # aqui é o bootstrap
-  return(funcao_theta_correlacao(boot_x))
-}
+intervalo = samples %>% 
+    mutate(error = theta_c_s_correlacao - theta_c_correlacao) %>% 
+    summarise(erro_inf = quantile(error, .025), 
+            erro_sup = quantile(error, .975),
+            media = mean(theta_c_s_correlacao),
+            des_padrao = sd(theta_c_s_correlacao)
+            )
 
-set.seed(1212)
-
-# A REAMOSTRAGEM PARA PROPORCAO
-reamostragens_correlacao = tibble(i = 1:repeticoes) %>% 
-  mutate(theta_c_s_correlacao = map(i, ~ um_bootstrap_correlacao(lastfm))) %>% 
-  unnest(theta_c_s_correlacao)
-
-reamostragens_correlacao
-
-reamostragens_correlacao %>%
-  ggplot(aes(x = theta_c_s_correlacao)) +
-  geom_histogram(binwidth = .5,
-                 colour = "darkorange",
-                 fill = "white")
-
-reamostragens_correlacao %>%
-  ggplot(aes(x = theta_c_s_correlacao - theta_c_correlacao)) +
-  geom_histogram(binwidth = 1,
-                 colour = "darkblue",
-                 fill = "white")
-
-```
-
-Se é retirado os erros amostrais
-
-```{r}
-intervalo = reamostragens_correlacao %>% 
-  mutate(error = theta_c_s_correlacao - theta_c_correlacao) %>% 
-  summarise(inf_error = quantile(error, .025), 
-            sup_error = quantile(error, .975))
-intervalo
-```
-
-E a seguir é calculado o intervalo de confiança: [inf_value, sup_value]
-
-```{r}
 intervalo = intervalo %>% 
-  mutate(inf_value = theta_c_correlacao + inf_error, 
-         sup_value = theta_c_correlacao + sup_error)
+  mutate(valor_inf = theta_c_correlacao + erro_inf, 
+         valor_sup = theta_c_correlacao + erro_sup)
 intervalo
-```
 
-Abaixo é realizado o bootstrap usando a biblioteca 'boot'.
+```
+    
+        Em média, a popularidade não possui uma associação implícita com a proporão de novos artistas. A correlação entre essas duas variáveis possui, para as reamostras, possui valores de média  = -0.05639989, desv. padrão 0.06301995 e N = 4000, para um intervalo de confiança de [-0.1808064, 0.06617983 ].
+    
+Abaixo é realizado o bootstrap usando a biblioteca 'boot' com o objetivo de comparar com os cálculos realizados anteriormente.
 
 ```{r}
 set.seed(12345)
-funcao_theta_proporcao = function(df,i) {
+funcao_theta_correlacao = function(df,i) {
   df <- df %>%
     slice(i) 
   
-  cor(df$mediana_pop, df$proporcao, method = "spearman")
+  cor(df$mediana_pop, df$proporcao, method = "pearson")
 }
-booted <- boot(data = lastfm, 
-               statistic = funcao_theta_proporcao, 
+booted <- boot(data = lastfm_pop, 
+               statistic = funcao_theta_correlacao, 
                R = 4000)
 intervalo_calc = boot.ci(booted, 
           conf = .95,
@@ -248,30 +232,21 @@ intervalo_calc = boot.ci(booted,
 
 intervalo_calc
 ```
+    
+        Os resultados concordam até a segunda casa decimal. Alguma diferença é esperada porque as reamostras são escolhidas randomicamente. De qualquer forma, o resultado é o mesmo: com 95% de confiança, podemos dizer que a Correlaão ente Proporção de novos artistas e a popularidade mediana dos artistas escutados está entre -0.18 e 0.06.
+    
+
+O gráfico de dispersão abaixo mostra a mediana da popularidade vs proporção de artistas novos e serve para confirmar o que foi calculado anteriormente.  
+
 
 ```{r}
-
-ggplot() +
-  geom_rect(
-    data = intervalo,
-    aes(xmin = inf_value, xmax = sup_value),
-    ymin = -Inf,
-    ymax = Inf,
-    fill = "gold",
-    alpha = .25
-  ) +
-  geom_histogram(
-    data = reamostragens_correlacao,
-    aes(theta_c_s_correlacao),
-    binwidth = .5,
-    fill = "white",
-    colour = "darkgrey"
-  ) +
-  geom_vline(xintercept = theta_c_correlacao, color = "dark green") +
-  labs(title = expression("Intervalo estimado via bootstrap"))
-
+lastfm_pop %>% 
+    ggplot(aes(x = mediana_pop, y = proporcao)) +
+    geom_point() + 
+    labs(title = expression("Correlaão ente Proporção de novos artistas\n e a popularidade mediana dos artistas escutados")) + 
+    xlab("Mediana Pop") +  # for the x axis label
+    ylab("Proporção geral de novos artistas") # for the y axis label
 ```
-
 
 
 

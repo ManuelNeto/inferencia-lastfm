@@ -18,3 +18,7 @@ As principais variáveis são:
   * news           <dbl> Quantos artistas novos foram escutados durante os 6 meses
   * old            <dbl> Quantos artistas já conhecidos foram escutados durante os 6 meses
 ```
+
+## Link RPUBS
+
+http://rpubs.com/ManuelNeto/498491
